@@ -267,6 +267,13 @@ local function shouldcompileascpp(filecfg)
 	return path.iscppfile(filecfg.abspath)
 end
 
+local function shouldcompileasobjcpp(filecfg)
+	if filecfg.compileas and filecfg.compileas ~= 'Default' then
+		return filecfg.compileas == 'Objective-C++'
+	end
+	return filecfg.abspath:endswith('.mm')
+end
+
 local function getFileDependencies(cfg)
 	local dependencies = {}
 	if #cfg.prebuildcommands > 0 or cfg.prebuildmessage then
@@ -436,6 +443,9 @@ local function c_cpp_compilation_rules(cfg, toolset, pch)
 		ninja.emit_flags('CXXFLAGS', all_cxxflags)
 		ninja.emit_rule('cxx', { cxx .. ' $CXXFLAGS' .. force_include .. ' -x c++ -MF $out.d -c -o $out $in' }, 'cxx $out', { depfile = '$out.d', deps = 'gcc' })
 
+		ninja.emit_flags('CXXFLAGS', all_cxxflags)
+		ninja.emit_rule('objcxx', { cxx .. ' $CXXFLAGS' .. force_include .. ' -x objective-c++ -MF $out.d -c -o $out $in' }, 'objcxx $out', { depfile = '$out.d', deps = 'gcc' })
+
 		ninja.emit_flags('CFLAGS', all_cflags)
 		ninja.emit_rule('clangtidy_cc', { 'clang-tidy $in -- -x c $CFLAGS' .. force_include, cc .. ' $CFLAGS' .. force_include .. ' -x c -MF $out.d -c -o $out $in' }, 'cc $out', { depfile = '$out.d', deps = 'gcc' })
 
@@ -552,6 +562,14 @@ local function compile_file_build(cfg, filecfg, toolset, pch_dependency, regular
 			vars = { 'CXXFLAGS = $CXXFLAGS ' .. getcxxflags(toolset, cfg, filecfg) }
 		end
 		ninja.add_build(cfg, objfilename, {}, iif(use_clangtidy, 'clangtidy_cxx', 'cxx'), { filepath }, pch_dependency, regular_file_dependencies, vars)
+	elseif shouldcompileasobjcpp(filecfg) then
+		local objfilename = obj_dir .. '/' .. obj_file
+		objfiles[#objfiles + 1] = objfilename
+		local vars = {}
+		if has_custom_settings then
+			vars = { 'CXXFLAGS = $CXXFLAGS ' .. getcxxflags(toolset, cfg, filecfg) }
+		end
+		ninja.add_build(cfg, objfilename, {}, 'objcxx', { filepath }, pch_dependency, regular_file_dependencies, vars)
 	elseif path.isresourcefile(filecfg.abspath) then
 		local objfilename = obj_dir .. '/' .. filecfg.basename .. '.res'
 		objfiles[#objfiles + 1] = objfilename
